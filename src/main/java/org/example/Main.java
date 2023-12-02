@@ -1,6 +1,5 @@
 package org.example;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -42,10 +41,16 @@ public class Main {
                     //Sprawdź położenie ISS
 
                     //Stworzenie HTTP klienta, request i wysłanie requestu z rządaniem odpowiedzi
-                    final HttpResponse<String> stringHttpResponseLocation = getStringHttpResponse(ISS_API_LOCATION);
+                    HttpClient client = HttpClient.newHttpClient();
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(ISS_API_LOCATION))
+                            .build();
+                    final HttpResponse<String> send = client.send(request, HttpResponse.BodyHandlers.ofString());
 
                     //Tworzymy sobie mppera, żeby wciągnąć wartość z JSONa, czyli odpowiedzi z zewnętrznego serwisu
-                    final JsonNode jsonNode = getJsonNode(stringHttpResponseLocation);
+                    ObjectMapper objectMapper = new ObjectMapper();
+
+                    final JsonNode jsonNode = objectMapper.readTree(send.body());
 
                     //Wyciągamy timestamp jako long
                     long timestamp = jsonNode.at("/timestamp").asLong();
@@ -60,26 +65,32 @@ public class Main {
 
                     System.out.println("Dnia " + localDateTime + " ISS " + " jest w miejscu szerokość: " + lat + " długość " + lon);
 
-                    writeToCsv("iss_location.csv", true, "date", localDateTime.toString(), "lat", String.valueOf(lat), "lon", String.valueOf(lon));
+                    try (BufferedWriter writer = new BufferedWriter(new FileWriter("iss_location.csv", true))) {
+                        StringBuilder line = new StringBuilder();
+                        line.append("date").append(",").append(localDateTime).append(",").append("lat")
+                                .append(",").append(lat).append(",").append("lon").append(",").append(lon).append("\n");
+                        writer.write(line.toString());
+                    }
                     break;
 
                 case 2:
-                    final HttpResponse<String> stringHttpResponsePeople = getStringHttpResponse(ISS_API_PEOPLE);
+                    final var response1 = getHttpResponse();
 
-                    final JsonNode jsonNode1 = getJsonNode(stringHttpResponsePeople);
+                    ObjectMapper objectMapper1 = new ObjectMapper();
+                    final JsonNode jsonNode1 = objectMapper1.readTree(response1.body());
                     final int totalNumber = jsonNode1.at("/number").asInt();
 
-                    //TODO Jak obejść to, żeby zapisaywało do pliku wszystkich ludzi raz i później już nie ndapisywało
                     StringBuilder people = new StringBuilder();
-                    for (JsonNode jsonArrayNode : jsonNode1.at("/people")) {
+                    for (JsonNode jsonArrayNode: jsonNode1.at("/people")) {
                         String name = jsonArrayNode.at("/name").asText();
                         System.out.println(name);
-                        writeToCsv("iss_people.csv", true, name);
                         people.append(name).append(",");
                     }
                     people.append(totalNumber).append("\n");
-                    writeToCsv("iss_people.csv", true, String.valueOf(totalNumber));
 
+                    try (BufferedWriter writer = new BufferedWriter(new FileWriter("iss_people.csv"))) {
+                        writer.write(people.toString());
+                    }
 
                     System.out.println("Wszystkich osób jest " + totalNumber);
                     break;
@@ -121,30 +132,14 @@ public class Main {
         scanner.close();
     }
 
-    private static JsonNode getJsonNode(final HttpResponse<String> stringHttpResponseLocation) throws JsonProcessingException {
-        ObjectMapper objectMapper = new ObjectMapper();
-        return objectMapper.readTree(stringHttpResponseLocation.body());
-    }
-
-    private static HttpResponse<String> getStringHttpResponse(final String uri) throws IOException, InterruptedException {
-        HttpClient client = HttpClient.newHttpClient();
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(uri))
+    private static HttpResponse<String> getHttpResponse() throws IOException, InterruptedException {
+        HttpClient client1 = HttpClient.newHttpClient();
+        HttpRequest request1 = HttpRequest.newBuilder()
+                .uri(URI.create(ISS_API_PEOPLE))
                 .build();
-        return client.send(request, HttpResponse.BodyHandlers.ofString());
 
-    }
-
-    private static void writeToCsv(String file, boolean shouldAppend, String... arguments) throws IOException {
-        try (BufferedWriter writer = new BufferedWriter(new FileWriter(file, shouldAppend))) {
-            StringBuilder line = new StringBuilder();
-            for (String argument : arguments) {
-                line.append(argument).append(",");
-            }
-            line.append("\n");
-            writer.write(line.toString());
-        }
-
+        final HttpResponse<String> response1 = client1.send(request1, HttpResponse.BodyHandlers.ofString());
+        return response1;
     }
 
 
